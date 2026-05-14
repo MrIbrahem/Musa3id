@@ -14,7 +14,7 @@ $.when(mw.loader.using(["mediawiki.user", "oojs-ui-core", "oojs-ui-windows", 'me
     G: [
       'صفحة [[مساعدة:تجربة|تجربة]]',
       '[[ويكيبيديا:تخريب|تخريب]] محض',
-      'إعادة إنشاء صفحة تم [[ويكيبيديا:سياسة الحذف|حذفها]] بناء على [[ويكيبيديا:نقاش الحذف|نقاش حذف]]',
+      'إعادة إنشاء صفحة قد [[ويكيبيديا:سياسة الحذف|حُذفت]] بناء على [[ويكيبيديا:نقاش الحذف|نقاش حذف]]',
       'صفحة  أنشأها وحررها مستخدم [[ويكيبيديا:سياسة المنع|ممنوع]] من المشاركة في تحرير ويكيبيديا',
       'أعمال صيانة غير خلافية',
       'صفحة طلب منشئها حذفها',
@@ -38,7 +38,7 @@ $.when(mw.loader.using(["mediawiki.user", "oojs-ui-core", "oojs-ui-windows", 'me
       'الصور غير الحرة والتي يمكن إنتاج بديل حر لها، أو غير مستخدمة.',
       'ملف متوفر نسخة منه على كومنز',
       'ملف سبام',
-      'ملف لا حاجة لها في ويكيبيديا'
+      'ملف لا حاجة له في ويكيبيديا'
       ],
     R: [
       '[[خاص:تحويلات مكسورة|تحويلة مكسورة]]',
@@ -318,7 +318,7 @@ $.when(mw.loader.using(["mediawiki.user", "oojs-ui-core", "oojs-ui-windows", 'me
     };
     // Get dialog height.
     ProcessDialog.prototype.getBodyHeight = function() {
-      return 440; //this.panel1.$element.outerHeight(true);
+      return 440;
     };
     // Create and append the window manager.
     var windowManager = new OO.ui.WindowManager();
@@ -331,6 +331,42 @@ $.when(mw.loader.using(["mediawiki.user", "oojs-ui-core", "oojs-ui-windows", 'me
     windowManager.addWindows([processDialog]);
     // Open the window.
     windowManager.openWindow(processDialog);
+
+    /**
+     * جلب قائمة المستخدمين الذين لا يرغبون في تلقي الرسائل
+     * الصفحة: ويكيبيديا:Musa3id/opt-out.json
+     * محتواها: { "optout": ["اسم مستخدم 1", "اسم مستخدم 2"] }
+     */
+    function getOptOutList(api) {
+      return api.get({
+        action: 'query',
+        titles: 'ويكيبيديا:Musa3id/opt-out.json',
+        prop: 'revisions',
+        rvprop: 'content',
+        rvslots: 'main',
+        format: 'json'
+      }).then(function(data) {
+        var pages = data.query.pages;
+        var pageId = Object.keys(pages)[0];
+        // الصفحة غير موجودة
+        if (pageId === '-1') return [];
+        var content = pages[pageId].revisions &&
+                      pages[pageId].revisions[0] &&
+                      pages[pageId].revisions[0].slots &&
+                      pages[pageId].revisions[0].slots.main &&
+                      pages[pageId].revisions[0].slots.main['*'];
+        if (!content) return [];
+        try {
+          var parsed = JSON.parse(content);
+          return Array.isArray(parsed.optout) ? parsed.optout : [];
+        } catch (e) {
+          mw.log.warn('Musa3id: تعذّر تحليل قائمة عدم الإشعار (opt-out.json)');
+          return [];
+        }
+      }).fail(function() {
+        return [];
+      });
+    }
 
     function putCSDTemplate(api, reason, notify, salt) {
       let deferred = $.Deferred();
@@ -353,15 +389,25 @@ $.when(mw.loader.using(["mediawiki.user", "oojs-ui-core", "oojs-ui-windows", 'me
           errorformat: 'html',
           errorlang: mwConfig.wgUserLanguage,
           errorsuselocal: true,
+          nocreate: true,
           format: 'json'
         }).then(function() {
           getCreator(api).then(function(data) {
             if (notify) {
               var user = data.query.pages[mw.config.get('wgArticleId')].revisions[0].user;
-              var message = `{{تنبيه شطب 2|${mwConfig.wgPageName}|${reason}}}`;
-              sendMessageToAuthor(user, message);
+              // التحقق من قائمة عدم الإشعار قبل إرسال الرسالة
+              getOptOutList(api).then(function(optOutUsers) {
+                if (optOutUsers.indexOf(user) !== -1) {
+                  mw.notify('المستخدم ' + user + ' مدرج في قائمة عدم الإشعار، لن يتم إرسال رسالة إليه.');
+                } else {
+                  var message = `{{تنبيه شطب 2|${mwConfig.wgPageName}|${reason}}}`;
+                  sendMessageToAuthor(user, message);
+                }
+                deferred.resolve();
+              });
+            } else {
+              deferred.resolve();
             }
-            deferred.resolve();
           }, function(_, error) {
             deferred.reject([new OO.ui.Error(api.getErrorMessage(error))]);
           });
@@ -394,7 +440,7 @@ $.when(mw.loader.using(["mediawiki.user", "oojs-ui-core", "oojs-ui-windows", 'me
       let posterPromise = mw.messagePoster.factory.create(title);
       let poster;
       posterPromise.done(function(_poster) {
-        poster = _poster.post('طلب حذف سريع لصفحة ' + '[[' + mwConfig.wgPageName.replace(/_/g, " ") + ']]',
+        poster = _poster.post('طلب حذف سريع لصفحة ' + '[[:' + mwConfig.wgPageName.replace(/_/g, " ") + ']]',
           message);
       });
       return poster;
