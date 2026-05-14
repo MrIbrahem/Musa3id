@@ -340,7 +340,7 @@ $.when(mw.loader.using(["mediawiki.user", "oojs-ui-core", "oojs-ui-windows", 'me
     function getOptOutList(api) {
       return api.get({
         action: 'query',
-        titles: 'ويكيبيديا:Musa3id/opt-out.json',
+        titles: 'mediawiki:Gadget-Musa3id-CSD/opt-out.json',
         prop: 'revisions',
         rvprop: 'content',
         rvslots: 'main',
